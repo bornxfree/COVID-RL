@@ -440,7 +440,7 @@ class SocialNetwork():
         self._properties['indexes_by_type'] = {}
 
         if 'type_dist' not in self._properties:
-            self._properties['type_dist'] = [ None for i in range( n ) ]
+            self._properties['type_dist'] = { 'default' : 1. }
             return
 
         min_num = 99999999
@@ -756,7 +756,7 @@ class SocialNetwork():
 
             ## Print out a list of possible commands
             elif cmdline[0] == 'help':
-                print( 'Commands:' )
+                print( 'SocialNetwork Commands:' )
                 print( '\tshow attribute_space <list of nodes (optional)>' )
                 print( '\tshow neighbors <list of nodes>' )
                 print( '\tshow types <list of nodes (optional)>' )
@@ -775,6 +775,9 @@ class SocialNetwork():
                 print( '\treveal <node1> <node2> <dimension>' )
                 print( '\thide <node1> <node2> <dimension>' )
                 print( '\tsave <filename>' )
+
+            elif cmdline[0] == 'draw':
+                nx.draw( self._graph )
 
             ## Use 'show' at the beginning of a command to display the value of
             ## a graph attribute.
