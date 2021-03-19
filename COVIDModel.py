@@ -226,7 +226,28 @@ class COVIDModel( SocialNetwork ):
 
     ## This is the function to handle one interaction between agents.
     def interact( self, node1, node2 ):
-        pass
+        health1 = self._properties['types'][node1]
+        health2 = self._properties['types'][node2]
+        resistance = 0
+        ## if neither person is exposed or infected, there's no transmission
+        if ((health1 !=  'E' and health1 != 'I') and (health2 != 'E' and health2 != 'I')):
+            return
+        ## find the resistance between the two nodes
+        if (self._properties['iswearing'][node1] == True and self._properties['iswearing'][node2] == True):
+            resistance = self._properties['mask_to_mask']
+        elif (self._properties['iswearing'][node2] == True and self._properties['iswearing'][node1] == False):
+            resistance = self._properties['nomask_to_mask']
+        elif (self._properties['iswearing'][node1] == True and self._properties['iswearing'][node2] == False):
+            resistance = self._properties['mask_to_nomask']
+        else:
+            resistance = self._properties['nomask_to_nomask']
+        ## calculate random number and if it's less than transmission probability, infect someone
+        transmit = rnd.random()
+        if (transmit > resistance):
+            if (health1 == 'S'):
+                self._properties['types'][node1] = 'E'
+            elif (health2 == 'S'):
+                self._properties['types'][node2] = 'E'
 
     ## This is the function that will deal with friending in between steps,
     ## if applicable.
