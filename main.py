@@ -9,7 +9,7 @@ def main():
 
     props = { 'n': 200,
               'topology':'scale free',
-              'saturation':.5,
+              'saturation':.1,
               'dimensions':1,
               'weight': 1.,
               'unfriend': 1.,

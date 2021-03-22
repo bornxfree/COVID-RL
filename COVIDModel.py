@@ -1,6 +1,7 @@
 from SocialNetwork import *
 import random as rnd
 import matplotlib.pyplot as plt
+import networkx as nx
 import numpy as np
 
 from keras.models import Sequential, load_model
@@ -226,7 +227,29 @@ class COVIDModel( SocialNetwork ):
 
     ## This is the function to handle one interaction between agents.
     def interact( self, node1, node2 ):
-        pass
+        
+        health1 = self._properties['types'][node1]
+        health2 = self._properties['types'][node2]
+        resistance = 0
+        ## if neither person is exposed or infected, there's no transmission
+        if ((health1 !=  'E' and health1 != 'I') and (health2 != 'E' and health2 != 'I')):
+            return
+        ## find the resistance between the two nodes
+        if (self._properties['iswearing'][node1] == True and self._properties['iswearing'][node2] == True):
+            resistance = self._properties['mask_to_mask']
+        elif (self._properties['iswearing'][node2] == True and self._properties['iswearing'][node1] == False):
+            resistance = self._properties['nomask_to_mask']
+        elif (self._properties['iswearing'][node1] == True and self._properties['iswearing'][node2] == False):
+            resistance = self._properties['mask_to_nomask']
+        else:
+            resistance = self._properties['nomask_to_nomask']
+        ## calculate random number and if it's less than transmission probability, infect someone
+        transmit = rnd.random()
+        if (transmit > resistance):
+            if (health1 == 'S'):
+                self._properties['types'][node1] = 'E'
+            elif (health2 == 'S'):
+                self._properties['types'][node2] = 'E'
 
     ## This is the function that will deal with friending in between steps,
     ## if applicable.
@@ -270,16 +293,18 @@ class COVIDModel( SocialNetwork ):
     def get_needs_perception( self, node ):
         pass
 
-    def build_learning_model( self ):
+    def build_learning_model( self, hidden_layers=1, layer_size=256 ):
 
         num_features = len( self.get_state( 0 ) )
         num_actions = 1
 
         self.model = Sequential()
-        self.model.add(Dense(256, input_dim=num_features, activation='relu'))
-        self.model.add(Dense(256, activation='relu'))
-        self.model.add(Dense(num_actions, activation='relu'))
-        self.model.compile(loss='mse', optimizer='adam', metrics=['accuracy'])
+        self.model.add( Dense( layer_size, input_dim=num_features,
+                               activation='relu') )
+        for i in range( 1, hidden_layers ):
+            self.model.add( Dense( layer_size, activation='relu') )
+        self.model.add( Dense( num_actions, activation='relu') )
+        self.model.compile( loss='mse', optimizer='adam', metrics=['accuracy'] )
 
     def train( self ):
 
@@ -375,6 +400,10 @@ class COVIDModel( SocialNetwork ):
                 elif cmdline[1] == 'housing_distribution':
                     
                     self.show_housing_distribution()
+                    
+                elif cmdline[1] == 'network':
+                    
+                    self.show_network()
 
                 else:
                     super( COVIDModel, self ).debug( frominherited=True, mycommand=cmdline )
@@ -402,4 +431,23 @@ class COVIDModel( SocialNetwork ):
                     nums[num] = 1
         keys = sorted( [i for i in nums] )
         plt.bar( keys, [nums[key] for key in keys] )
+        plt.show()
+        
+    def show_network( self ):
+        
+        mycolors = []
+        
+        if 'type_dist' in self._properties:
+            colors = {}
+            for t in self._properties['type_dist']:
+                colors[t] = ( rnd.random(), rnd.random(), rnd.random(), 0.5 )
+                
+            for i in range( len( self._properties['types'] ) ):
+                mycolors.append( colors[self._properties['types'][i]] )
+                
+        else:
+            
+            mycolors = [ 'b' for i in range( self._properties['n'] ) ]
+            
+        nx.draw_networkx( self._graph, node_color=mycolors )
         plt.show()
