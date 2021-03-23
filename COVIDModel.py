@@ -231,21 +231,22 @@ class COVIDModel( SocialNetwork ):
         health1 = self._properties['types'][node1]
         health2 = self._properties['types'][node2]
         resistance = 0
-        ## if neither person is exposed or infected, there's no transmission
+        ## If neither person is exposed or infected, do not transmit.
         if ((health1 !=  'E' and health1 != 'I') and (health2 != 'E' and health2 != 'I')):
             return
-        ## find the resistance between the two nodes
-        if (self._properties['iswearing'][node1] == True and self._properties['iswearing'][node2] == True):
+        ## Find the resistance between two nodes.
+        if (self._properties['iswearing'][node1] and self._properties['iswearing'][node2]):
             resistance = self._properties['mask_to_mask']
-        elif (self._properties['iswearing'][node2] == True and self._properties['iswearing'][node1] == False):
+        elif (self._properties['iswearing'][node2] and not self._properties['iswearing'][node1]):
             resistance = self._properties['nomask_to_mask']
-        elif (self._properties['iswearing'][node1] == True and self._properties['iswearing'][node2] == False):
+        elif (self._properties['iswearing'][node1] and not self._properties['iswearing'][node2]):
             resistance = self._properties['mask_to_nomask']
         else:
             resistance = self._properties['nomask_to_nomask']
-        ## calculate random number and if it's less than transmission probability, infect someone
+        ## Calculate a random number to see if it's less than transmission probability.
         transmit = rnd.random()
-        if (transmit > resistance):
+        ## If one node is susceptible, infect the susceptible node. Otherwise, do nothing.
+        if (transmit <= resistance):
             if (health1 == 'S'):
                 self._properties['types'][node1] = 'E'
             elif (health2 == 'S'):
