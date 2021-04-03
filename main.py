@@ -30,6 +30,10 @@ def main():
                                     'SHOP':.25,
                                     'GROCERY':.25
                                     }
+              'sigmoid_coefficients': {'slow':.5,
+                                       'normal': 1.0,
+                                       'fast': 2.0
+                                       }
               }
 
     CM = COVIDModel( props )
