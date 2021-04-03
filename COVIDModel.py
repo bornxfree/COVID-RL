@@ -261,12 +261,17 @@ class COVIDModel( SocialNetwork ):
     def get_state( self, node ):
         pass
 
-    def get_reward( self, node ):
-        ## Homophily
-        ## Satisfaction of basic needs
-        ## Satisfaction of social needs
-        ## Non-material needs (doctor)
-        pass
+    ## This function calculates the demand for a certain good.
+    def sigmoid ( days, speed ):
+        if (not speed = 'slow' and not speed = 'normal' and not speed = 'fast')
+            print('error: speed is not slow, medium, or fast')
+            pass
+        return 1/(1+ e **(- days *self._properties['sigmoid_coefficients'][speed]))
+
+    ## Calculates the total reward for one agent on one time step.
+    def get_reward( self, node, necessities, social, other ):
+        reward = 3
+        return reward - sigmoid(necessities, 'fast') - sigmoid(social, 'normal') - sigmoid(other, 'slow')
 
     ## Returns the percentage of nodes in the network of type 'I'.
     def get_global_prevalence( self ):
