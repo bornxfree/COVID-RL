@@ -31,7 +31,7 @@ def main():
                                     },
               'half_life': 10,
               'perc_working': .7,
-              'i_to_S': .05,
+              'i_to_s': .05,
               'e_to_i': .08,
               'mask_to_mask':.01,
               'mask_to_nomask':.02,

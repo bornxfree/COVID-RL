@@ -575,21 +575,25 @@ class COVIDModel( SocialNetwork ):
         if self._properties['iswearing'][node]: r *= .75
         
         ## Return modified demand, altered by any NPI measures in place.
-        return r + self._properties['npi']
+        return r - self.get_NPI_level()
     
     def get_average_reward( self, mode='default' ):
         
         nodes = list( range( self._properties['n'] ) )
         if mode == 'mask':
-            nodes = [ i for i in range(len(nodes)) if self._properties['types'][i] ]
+            nodes = [ i for i in nodes if self._properties['iswearing'][i] ]
         elif mode == 'nomask':
-            nodes = [ i for i in range(len(nodes)) if not self._properties['types'][i] ]
+            nodes = [ i for i in nodes if not self._properties['iswearing'][i] ]
         if not nodes: return 0.
         return mean( [ self.get_reward(i) for i in nodes ] )
     
     def get_NPI_level( self ):
         ## Need to implement the central controller
-        pass
+        if self.get_global_prevalence() > .05:
+            self._properties['npi'] = .0
+        else:
+            self._properties['npi'] = 100 * (self.get_global_prevalence() - .05)
+        return self._properties['npi']
 
     ## Returns the percentage of nodes in the network of type 'I'.
     def get_global_prevalence( self ):
@@ -964,6 +968,10 @@ class COVIDModel( SocialNetwork ):
         result_file = open( 'current_results\\10penalty_SEIRS_Results_ep%d.csv' % ep, 'w' )
         
         for step in range( num_steps ):
+            
+            prev = self.get_global_prevalence()
+            if prev > .05:
+                self._properties['npi'] = 300 * ( prev - .05 )
                 
             act_start = time.clock()
             package = self.act( training=True, eps=epsilon )
