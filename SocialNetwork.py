@@ -106,6 +106,11 @@ class SocialNetwork():
 
         if 'file' in self._properties: self._read( self._properties['file'] )
         else: self._build()
+        
+#        for key in self._properties:
+#            print( key )
+#            print( self._properties[key] )
+#            print( type( self._properties[key] ) )
 
     ## A function to log basic interactions.  Used to keep track of parameter
     ## settings and input/output file locations, etc.
@@ -144,29 +149,40 @@ class SocialNetwork():
 
         for a in root.attrib:
             ## Matrices
-            if a in [ 'attribute_space', 'correlations' ]:
+            if a in [ 'attribute_space', 'correlations', 'steps_since',
+                      'agent_xy' ]:
                 self._properties[a] = string_to_matrix( root.attrib[a] )
             ## Float lists
             elif a in ['resistance']:
-                self._properties[a] = [ float(i) for i in root.attrib[a].split(',') ]
+                self._properties[a] = string_to_vector( root.attrib[a] )
+            ## Bool lists
+            elif a in ['iswearing']:
+                self._properties[a] = [ bool(i) for i in root.attrib[a].split(',') ]
             ## Ints
-            elif a in [ 'dimensions', 'seed', 'n' ]:
+            elif a in [ 'dimensions', 'seed', 'n', 'num_businesses',
+                        'max_cohabitation', 'half_life' ]:
                 self._properties[a] = int( root.attrib[a] )
             ## Floats
             elif a in [ 'friend', 'unfriend', 'rewire',
-                        'saturation', 'weight', 'update' ]:
+                        'saturation', 'weight', 'update',
+                        'recover', 'i_to_r', 'e_to_i', 'i_to_s',
+                        'mask_to_mask', 'mask_to_nomask', 'nomask_to_mask',
+                        'nomask_to_nomask', 'risk_mod', 'weight_mean',
+                        'weight_stdev', 'npi' ]:
                 try:
                     self._properties[a] = float( root.attrib[a] )
                 except:
                     self._properties[a] = root.attrib[a]
             ## Bools
-            elif a in [ 'directed', 'symmetric' ]:
+            elif a in [ 'directed', 'symmetric', 'wearing' ]:
                 self._properties[a] = bool( root.attrib[a] )
             ## String lists
-            elif a in [ 'types' ]:
+            elif a in [ 'types', 'agent_locations', 'businesses',
+                        'home_locations' ]:
                 self._properties[a] = root.attrib[a].split( ',' )
             ## Dictionaries
-            elif a in [ 'type_dist', 'indexes_by_type' ]:
+            elif a in [ 'type_dist', 'indexes_by_type', 'business_type_dist',
+                        'housing_dist', 'agents_by_location', 'locations' ]:
                 self._properties[a] = eval( root.attrib[a] )
             elif a == 'resistance_param':
                 if root.attrib[a] == 'random':
@@ -228,13 +244,19 @@ class SocialNetwork():
         ## attributes of different types.
         attr = {}
         for key in self._properties:
-            if key in [ 'attribute_space', 'correlations' ]:
+            if key in [ 'attribute_space', 'correlations', 'steps_since',
+                        'agent_xy' ]:
                 attr[key] = matrix_to_string( self._properties[key] )
-            elif key in [ 'types', 'resistance' ]:
+            elif key in [ 'types', 'resistance', 'home_locations',
+                          'agent_locations', 'iswearing', 'businesses' ]:
                 attr[key] = vector_to_string( self._properties[key] )
             ## Skip over these because they get written out at the Node level.
             elif key in [ 'weights', 'normalized_weights', 'masks' ]:
                 continue
+            elif key in [ 'locations' ]:
+                for subkey in self._properties[key]:
+                    self._properties[key][subkey] = list( self._properties[key][subkey] )
+                attr[key] = str( self._properties[key] )
             else:
                 attr[key] = str( self._properties[key] )
 
@@ -268,6 +290,9 @@ class SocialNetwork():
         if 'dimensions' not in props: self._properties['dimensions'] = 1
         if 'visibility' not in props: self._properties['visibility'] = 'visible'
         if 'weight' not in props: self._properties['weight'] = 1.0
+        else:
+            if 'weight_mean' not in props: self._properties['weight_mean'] = .5
+            if 'weight_stdev' not in props: self._properties['weight_stdev'] = .1
         if 'unfriend' not in props: self._properties['unfriend'] = 1.0
         if 'update' not in props: self._properties['update'] = 1.0
         if 'resistance_param' not in props: self._properties['resistance_param'] = 0.0
@@ -335,6 +360,16 @@ class SocialNetwork():
             ## Add opposite edges if network should be symmetric
             if self._properties['symmetric']: self._graph.add_edge( e[1], e[0] )
 
+    def generate_edge_weight( self ):
+        
+        if self._properties['weight'] == 'random':
+            return rnd.random()
+        elif self._properties['weight'] == 'gaussian':
+            return np.random.normal( loc=self._properties['weight_mean'],
+                                     scale=self._properties['weight_stdev'] )
+        else:
+            return self._properties['weight']
+        
     def initialize_edge_weights( self ):
 
         ## Initialize blank n x n matrices to hold raw and normalized values for
@@ -347,13 +382,10 @@ class SocialNetwork():
         for u in self._graph.nodes():
             nbrs = self.get_neighbors( u )
             for v in nbrs:
+                if self._properties['weights'][v][u] > 0.: continue
+                self._properties['weights'][v][u] = self.generate_edge_weight()
                 
-                if self._properties['weights'][v][u] > 0: continue
-                if self._properties['weight'] == 'random':
-                    self._properties['weights'][v][u] = rnd.random()
-                else:
-                    self._properties['weights'][v][u] = self._properties['weight']
-                if not self._properties['directed']:
+                if ( not self._properties['directed'] ) or ( self._properties['symmetric'] ):
                     self._properties['weights'][u][v] = self._properties['weights'][v][u]
                     
             self._properties['weights'][u][u] = 1.
@@ -528,7 +560,6 @@ class SocialNetwork():
         matrix = [ self._properties['attribute_space'][i] \
                    for i in self._properties['indexes_by_type'][t] ]
         return np.array( matrix ).mean( axis=0 )
-        
 
     def get_reward_for_neighbor( self, u, v ):
 
@@ -588,10 +619,7 @@ class SocialNetwork():
         self._graph.add_edge( u, v )
 
         ## Change influence scores in self._influence
-        if self._properties['weight'] == 'random':
-            self._properties['weights'][u][v] = rnd.random()
-        else:
-            self._properties['weights'][u][v] = self._properties['weight']
+        self._properties['weights'][u][v] = self.generate_edge_weight()
 
         ## Change masks based on visibility
         if self._properties['visibility'] == 'visible':
@@ -608,6 +636,9 @@ class SocialNetwork():
             
             if self._properties['weight'] == 'random':
                 self._properties['weights'][v][u] = rnd.random()
+            elif self._properties['weight'] == 'gaussian':
+                self._properties['weights'][v][u] = np.random.normal( loc=self._properties['weight_mean'],
+                                                                      scale=self._properties['weight_stdev'] )
             else: self._properties['weights'][v][u] = self._properties['weight']
             
             if self._properties['visibility'] == 'visible':
