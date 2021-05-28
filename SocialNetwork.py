@@ -168,7 +168,8 @@ class SocialNetwork():
                         'recover', 'i_to_r', 'e_to_i', 'i_to_s',
                         'mask_to_mask', 'mask_to_nomask', 'nomask_to_mask',
                         'nomask_to_nomask', 'risk_mod', 'weight_mean',
-                        'weight_stdev', 'npi' ]:
+                        'weight_stdev', 'npi', 'inf_punishment',
+                        'delta' ]:
                 try:
                     self._properties[a] = float( root.attrib[a] )
                 except:

@@ -17,27 +17,29 @@ def main():
               'unfriend': .0,
               'friend': .0,
               'update': 1.,
-              'type_dist': {'S':.98,'E':.0,'I':.02,'R':.0},
+              'type_dist': {'S':1.,'E':.0,'I':.0,'R':.0},
               'housing_dist': {1: .28, 2: .35, 3: .15,
                                4: .12, 5: .05, 6: .02,
                                7: .02, 8:.01},
               'resistance_param': .0,
               'wearing': False,
               'recover': .1,
-              'num_businesses': 20,
+              'num_businesses': 4,
               'max_cohabitation': 8,
               'business_type_dist': { 'nec' : 0.5,
                                       'serv' : 0.5
                                     },
               'half_life': 10,
               'perc_working': .7,
-              'i_to_s': .05,
-              'e_to_i': .08,
-              'mask_to_mask':.01,
-              'mask_to_nomask':.02,
-              'nomask_to_mask':.03,
-              'nomask_to_nomask':.075,
+              'i_to_s': .1813,
+              'e_to_i': .1813,
+              'mask_to_mask':.0,
+              'mask_to_nomask':.0,
+              'nomask_to_mask':.0,
+              'nomask_to_nomask':.0,
               'risk_mod':1.,
+              'inf_punishment':0,
+              'delta':.5
 #              'file': 'test.xml'
               }
 
@@ -45,11 +47,13 @@ def main():
     CM._save('learningtest')
     props['file'] = 'learningtest.xml'
 
-    CM.training_episode()
-    for i in range(1, 50):
+    epsilon = .2 * ( .95 ** 1 )
+#    CM.training_episode( epsilon=epsilon )
+    for i in range(30,60):
         del CM
         CM = COVIDModel( props )
-        CM.training_episode(newmodel=False, ep=i)
+        epsilon = .2 * ( .95 ** i )
+        CM.training_episode(newmodel=False, ep=i, epsilon=epsilon)
 
 if __name__ == '__main__':
     main()
