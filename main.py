@@ -9,7 +9,7 @@ import random
 
 def main():
 
-    props = { 'n': 500,
+    props = { 'n': 250,
               'topology':'scale free',
               'saturation':.05,
               'dimensions':1,
@@ -17,7 +17,7 @@ def main():
               'unfriend': .0,
               'friend': .0,
               'update': 1.,
-              'type_dist': {'S':1.,'E':.0,'I':.0,'R':.0},
+              'type_dist': {'S': .98, 'E':.02, 'I':.0, 'R':.0},
               'housing_dist': {1: .28, 2: .35, 3: .15,
                                4: .12, 5: .05, 6: .02,
                                7: .02, 8:.01},
@@ -33,12 +33,16 @@ def main():
               'perc_working': .7,
               'i_to_s': .1813,
               'e_to_i': .1813,
-              'mask_to_mask':.0,
-              'mask_to_nomask':.0,
-              'nomask_to_mask':.0,
-              'nomask_to_nomask':.0,
+              'mask_to_mask':.01,
+              'mask_to_nomask':.03,
+              'nomask_to_mask':.01,
+              'nomask_to_nomask':.03,
+#              'mask_to_mask':.0,
+#              'mask_to_nomask':.0,
+#              'nomask_to_mask':.0,
+#              'nomask_to_nomask':.0,
               'risk_mod':1.,
-              'inf_punishment':0,
+              'inf_punishment':100,
               'delta':.5
 #              'file': 'test.xml'
               }
@@ -46,14 +50,22 @@ def main():
     CM = COVIDModel( props )
     CM._save('learningtest')
     props['file'] = 'learningtest.xml'
+    
+    numtests = 50
+    policies = ['control1','control2','control3']
+    for pol in policies:
+        for i in range( numtests ):
+            del CM
+            CM = COVIDModel( props )
+            CM.training_episode(newmodel=False, ep=i, epsilon=1., policy=pol)
 
-    epsilon = .2 * ( .95 ** 1 )
-#    CM.training_episode( epsilon=epsilon )
-    for i in range(30,60):
-        del CM
-        CM = COVIDModel( props )
-        epsilon = .2 * ( .95 ** i )
-        CM.training_episode(newmodel=False, ep=i, epsilon=epsilon)
+#    epsilon = 1.
+#    for i in range(175,200):
+#        del CM
+#        CM = COVIDModel( props )
+#        epsilon = 1. * ( .95 ** i )
+#        if i > 0: CM.training_episode(newmodel=False, ep=i, epsilon=epsilon)
+#        else: CM.training_episode(newmodel=True, ep=i, epsilon=epsilon)
 
 if __name__ == '__main__':
     main()

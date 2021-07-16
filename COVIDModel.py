@@ -349,7 +349,7 @@ class COVIDModel( SocialNetwork ):
     ## This function definition will override the one in the base class.
     ## This is where we define which agents will act and what they will do.
     ## Choose where to go and then whether to mask.
-    def act( self, training=False, eps=1. ):
+    def act( self, training=False, policy='control1', eps=1. ):
         
         ## Action codes:
         ##   1 : necessities
@@ -411,23 +411,70 @@ class COVIDModel( SocialNetwork ):
                     
                     mask_s = self.get_state_for_masking( i, action_idx )
                     mask_observations.append( mask_s )
-                    
+            
+            # Hand-crafted policy
             else:
                 
-                mysteps = self._properties['steps_since'][i]
-                mydemand = self.get_demand( i )
-                if mydemand[0] > .15:
-#                if mysteps[0] > 5:
-                    action_idx = 0
-                elif mydemand[1] > .15:
-#                elif mysteps[1] > 10:
-                    action_idx = 1
-                elif mydemand[2] > .15:
-#                elif mysteps[2] > 8:
-                    action_idx = 2
-                else:
-                    action_idx = 3
-                mask_idx = 0
+                z = self.get_global_prevalence()
+                
+                if policy == 'control1':
+                    mysteps = self._properties['steps_since'][i]
+                    mydemand = self.get_demand( i )
+                    if mydemand[0] > .15:
+    #                if mysteps[0] > 5:
+                        action_idx = 0
+                    elif mydemand[1] > .15:
+    #                elif mysteps[1] > 10:
+                        action_idx = 1
+                    elif mydemand[2] > .15:
+    #                elif mysteps[2] > 8:
+                        action_idx = 2
+                    else:
+                        action_idx = 3
+                    mask_idx = 0
+                    
+                if policy == 'control2':
+                    mysteps = self._properties['steps_since'][i]
+                    mydemand = self.get_demand( i )
+                    if mydemand[0] > .15:
+    #                if mysteps[0] > 5:
+                        action_idx = 0
+                    elif mydemand[1] > .15:
+    #                elif mysteps[1] > 10:
+                        action_idx = 1
+                    elif mydemand[2] > .15:
+    #                elif mysteps[2] > 8:
+                        action_idx = 2
+                    else:
+                        action_idx = 3
+                        
+                    if z > .03:
+                        mask_idx = 1
+                    else:
+                        mask_idx = 0
+                    
+                if policy == 'control3':
+                    mysteps = self._properties['steps_since'][i]
+                    mydemand = self.get_demand( i )
+                    if mydemand[0] > .15:
+    #                if mysteps[0] > 5:
+                        if z > .06 and mydemand[0] > .5: action_idx = 0
+                        else: action_idx = 3
+                    elif mydemand[1] > .15:
+    #                elif mysteps[1] > 10:
+                        if z > .06 and mydemand[1] > .5: action_idx = 1
+                        else: action_idx = 3
+                    elif mydemand[2] > .15:
+    #                elif mysteps[2] > 8:
+                        if z > .06 and mydemand[2] > .5: action_idx = 2
+                        else: action_idx = 3
+                    else:
+                        action_idx = 3
+                    
+                    if z > .03:
+                        mask_idx = 1
+                    else:
+                        mask_idx = 0
                 
             action_choices.append( action_idx )
             mask_choices.append( mask_idx )
@@ -629,11 +676,11 @@ class COVIDModel( SocialNetwork ):
     
     def get_NPI_level( self ):
         ## Need to implement the central controller
-#        self._properties['npi'] = 0.
-        if self.get_global_prevalence() < .03:
-            self._properties['npi'] = .0
-        else:
-            self._properties['npi'] = ( 100 * (self.get_global_prevalence() - .03) ) ** 2
+        self._properties['npi'] = 0.
+#        if self.get_global_prevalence() < .03:
+#            self._properties['npi'] = .0
+#        else:
+#            self._properties['npi'] = ( 100 * (self.get_global_prevalence() - .03) ) # ** 2
         return self._properties['npi']
 
     ## Returns the percentage of nodes in the network of type 'I'.
@@ -661,7 +708,7 @@ class COVIDModel( SocialNetwork ):
 
     ## Returns demand vector.
     def get_needs_perception( self, node ):
-        return self.get_demand( node )
+        return [ round( i, 5 ) for i in self.get_demand( node ) ]
 
     def build_learning_model( self ):
 
@@ -669,16 +716,16 @@ class COVIDModel( SocialNetwork ):
 
         self.action_model = Sequential()
         self.action_model.add( Dense( 32, input_dim=len( self.get_state_for_action(0) ),
-                                      activation='sigmoid' ) )
-        self.action_model.add( Dense( 32, activation='sigmoid') )
+                                      activation='relu' ) )
+        self.action_model.add( Dense( 32, activation='relu') )
         self.action_model.add( Dense( num_actions, activation='sigmoid') )
         self.action_model.compile( loss='mse', optimizer='adam', metrics=['accuracy'] )
         
         ## Output layer is two nodes, one for mask, one for not.
         self.mask_model = Sequential()
         self.mask_model.add( Dense( 32, input_dim=len( self.get_state_for_masking(0,3) ),
-                             activation='sigmoid' ) )
-        self.mask_model.add( Dense( 32, activation='sigmoid') )
+                             activation='relu' ) )
+        self.mask_model.add( Dense( 32, activation='relu') )
         self.mask_model.add( Dense( 2, activation='sigmoid') )
         
         self.action_model.compile(loss='mse', optimizer='adam', metrics=['accuracy'])
@@ -941,41 +988,45 @@ class COVIDModel( SocialNetwork ):
             print( 'Time spent writing: %s' % write_dur )
             
     def training_episode( self, newmodel=True, mynpi=False, num_steps=500, ep=0,
-                          epsilon=.1):
+                          epsilon=.1, policy='training' ):
         
         ## Track statistics with these
-        num_nec_mask_interactions    = []
-        num_serv_mask_interactions   = []
-        num_social_mask_interactions = []
-        num_mask_nops                = []
-        num_nec_nomask_interactions    = []
-        num_serv_nomask_interactions   = []
-        num_social_nomask_interactions = []
-        num_nomask_nops                = []
-        avg_lag_nec                    = []
-        avg_lag_serv                   = []
-        avg_lag_soc                    = []
-        num_susceptible         = []
-        num_exposed             = []
-        num_infected            = []
-        num_recovered           = []
-        avg_rewards             = []
-        avg_rewards_mask        = []
-        avg_rewards_nomask      = []
-        npi                     = []
+#        num_nec_mask_interactions    = []
+#        num_serv_mask_interactions   = []
+#        num_social_mask_interactions = []
+#        num_mask_nops                = []
+#        num_nec_nomask_interactions    = []
+#        num_serv_nomask_interactions   = []
+#        num_social_nomask_interactions = []
+#        num_nomask_nops                = []
+#        avg_lag_nec                    = []
+#        avg_lag_serv                   = []
+#        avg_lag_soc                    = []
+#        num_susceptible         = []
+#        num_exposed             = []
+#        num_infected            = []
+#        num_recovered           = []
+#        avg_rewards             = []
+#        avg_rewards_mask        = []
+#        avg_rewards_nomask      = []
+#        npi                     = []
         
-        a_model_name = 'action_model_%spenalty_SEIS_%sbusinesses_npi%s' % ( self._properties['inf_punishment'],
-                                                                                self._properties['num_businesses'],
-                                                                                mynpi )
-        m_model_name = 'mask_model_%spenalty_SEIS_%sbusinesses_npi%s' % ( self._properties['inf_punishment'],
-                                                                              self._properties['num_businesses'],
-                                                                              mynpi )
-        outfilename = 'current_results\\%spenalty_SEIS_%sbusinesses_npi%s_ep%d.csv' % ( self._properties['inf_punishment'],
-                                                                                               self._properties['num_businesses'],
-                                                                                               mynpi, ep )
-        action_filename = 'current_results\\actions_%spenalty_SEIS_%sbusinesses_npi%s_ep%d.csv' % ( self._properties['inf_punishment'],
-                                                                                                           self._properties['num_businesses'],
-                                                                                                           mynpi, ep )
+#        a_model_name = 'action_model_%dpenalty_SEIS_%sbusinesses_npi%s_inf%s' % ( int( self._properties['inf_punishment'] ),
+#                                                                                  self._properties['num_businesses'],
+#                                                                                  mynpi, int( self._properties['inf_punishment'] ) )
+#        m_model_name = 'mask_model_%dpenalty_SEIS_%sbusinesses_npi%s_inf%s' % ( int( self._properties['inf_punishment'] ),
+#                                                                              self._properties['num_businesses'],
+#                                                                              mynpi, int( self._properties['inf_punishment'] ) )
+#        outfilename = 'current_results\\%dpenalty_SEIS_%sbusinesses_npi%s_inf%s_ep%d.csv' % ( self._properties['inf_punishment'],
+#                                                                                               self._properties['num_businesses'],
+#                                                                                               mynpi, int( self._properties['inf_punishment'] ), ep )
+#        action_filename = 'current_results\\actions_%dpenalty_SEIS_%sbusinesses_npi%s_inf%s_ep%d.csv' % ( self._properties['inf_punishment'],
+#                                                                                                           self._properties['num_businesses'],
+#                                                                                                           mynpi, self._properties['inf_punishment'], ep )
+
+        a_model_name = 'action_model_control'
+        m_model_name = 'mask_model_control'
+        outfilename = 'current_results\\%s_ep%d.csv' % ( policy, ep )
 
         alpha = .01
         decay = 1.
@@ -986,22 +1037,23 @@ class COVIDModel( SocialNetwork ):
         stats_time = 0
         train_time = 0
         
-        training = True
+        training = False
         
         start = time.clock()
         
         init_start = time.clock()
-            
-        if newmodel:
-            ## On the first episode, initialize the learning model
-            if training: self.build_learning_model()
-            else: pass
-        else:
-            ## Each episode thereafter, just reset the graph to its original
-            ## state and load the pre-built models.
-            if training:
-                self.action_model = load_model( a_model_name )
-                self.mask_model = load_model( m_model_name )
+        
+        if policy == 'training':
+            if newmodel:
+                ## On the first episode, initialize the learning model
+                if training: self.build_learning_model()
+                else: pass
+            else:
+                ## Each episode thereafter, just reset the graph to its original
+                ## state and load the pre-built models.
+                if training:
+                    self.action_model = load_model( a_model_name )
+                    self.mask_model = load_model( m_model_name )
             
             self.init_mask_wearing()
             self.init_steps_since()
@@ -1013,60 +1065,64 @@ class COVIDModel( SocialNetwork ):
         print( 'Time to initialize graph: ', init_dur )
         
         stats_start = time.clock()
-        num_nec_mask_interactions.append( 0 )
-        num_serv_mask_interactions.append( 0 )
-        num_social_mask_interactions.append( 0 )
-        num_mask_nops.append( 0 )
-        num_nec_nomask_interactions.append( 0 )
-        num_serv_nomask_interactions.append( 0 )
-        num_social_nomask_interactions.append( 0 )
-        num_nomask_nops.append( 0 )
         
-        avg_lag_nec.append( 0 )
-        avg_lag_serv.append( 0 )
-        avg_lag_soc.append( 0 )
-        
-        num_susceptible.append( self._properties['types'].count( 'S' ) )
-        num_exposed.append( self._properties['types'].count( 'E' ) )
-        num_infected.append( self._properties['types'].count( 'I' ) )
-        num_recovered.append( self._properties['types'].count( 'R' ) )
-        
-        avg_rewards.append( self.get_average_reward() )
-        avg_rewards_mask.append( self.get_average_reward( mode='mask' ) )
-        avg_rewards_nomask.append( self.get_average_reward( mode='nomask' ) )
-        
-        npi.append( 0 )
+#        num_nec_mask_interactions.append( 0 )
+#        num_serv_mask_interactions.append( 0 )
+#        num_social_mask_interactions.append( 0 )
+#        num_mask_nops.append( 0 )
+#        num_nec_nomask_interactions.append( 0 )
+#        num_serv_nomask_interactions.append( 0 )
+#        num_social_nomask_interactions.append( 0 )
+#        num_nomask_nops.append( 0 )
+#        
+#        avg_lag_nec.append( 0 )
+#        avg_lag_serv.append( 0 )
+#        avg_lag_soc.append( 0 )
+#        
+#        num_susceptible.append( self._properties['types'].count( 'S' ) )
+#        num_exposed.append( self._properties['types'].count( 'E' ) )
+#        num_infected.append( self._properties['types'].count( 'I' ) )
+#        num_recovered.append( self._properties['types'].count( 'R' ) )
+#        
+#        avg_rewards.append( self.get_average_reward() )
+#        avg_rewards_mask.append( self.get_average_reward( mode='mask' ) )
+#        avg_rewards_nomask.append( self.get_average_reward( mode='nomask' ) )
+#        
+#        npi.append( 0 )
         
         stats_end = time.clock()
         stats_dur = stats_end - stats_start
         stats_time += stats_dur
         
         result_file = open( outfilename, 'w' )
-        actions_file = open( action_filename, 'w' )
-        actions_dist = { 'S' : { 'nec_mask' : [], 'nec_nomask' : [],
-                                 'soc_mask' : [], 'soc_nomask' : [],
-                                 'serv_mask' : [], 'serv_nomask' : [],
-                                 'nop_mask' : [], 'nop_nomask' : [] },
-                         'E' : { 'nec_mask' : [], 'nec_nomask' : [],
-                                 'soc_mask' : [], 'soc_nomask' : [],
-                                 'serv_mask' : [], 'serv_nomask' : [],
-                                 'nop_mask' : [], 'nop_nomask' : [] },
-                         'I' : { 'nec_mask' : [], 'nec_nomask' : [],
-                                 'soc_mask' : [], 'soc_nomask' : [],
-                                 'serv_mask' : [], 'serv_nomask' : [],
-                                 'nop_mask' : [], 'nop_nomask' : [] },
-                         'R' : { 'nec_mask' : [], 'nec_nomask' : [],
-                                 'soc_mask' : [], 'soc_nomask' : [],
-                                 'serv_mask' : [], 'serv_nomask' : [],
-                                 'nop_mask' : [], 'nop_nomask' : [] }
-                         }
+        
+#        actions_file = open( action_filename, 'w' )
+#        actions_dist = { 'S' : { 'nec_mask' : [], 'nec_nomask' : [],
+#                                 'soc_mask' : [], 'soc_nomask' : [],
+#                                 'serv_mask' : [], 'serv_nomask' : [],
+#                                 'nop_mask' : [], 'nop_nomask' : [] },
+#                         'E' : { 'nec_mask' : [], 'nec_nomask' : [],
+#                                 'soc_mask' : [], 'soc_nomask' : [],
+#                                 'serv_mask' : [], 'serv_nomask' : [],
+#                                 'nop_mask' : [], 'nop_nomask' : [] },
+#                         'I' : { 'nec_mask' : [], 'nec_nomask' : [],
+#                                 'soc_mask' : [], 'soc_nomask' : [],
+#                                 'serv_mask' : [], 'serv_nomask' : [],
+#                                 'nop_mask' : [], 'nop_nomask' : [] },
+#                         'R' : { 'nec_mask' : [], 'nec_nomask' : [],
+#                                 'soc_mask' : [], 'soc_nomask' : [],
+#                                 'serv_mask' : [], 'serv_nomask' : [],
+#                                 'nop_mask' : [], 'nop_nomask' : [] }
+#                         }
+
+        myresults = [ [] for agent in range(self._properties['n']) ]
 
         for step in range( num_steps ):
             
-            prev = self.get_global_prevalence()
+#            print( self.get_global_prevalence() )
                 
             act_start = time.clock()
-            package = self.act( training=training, eps=epsilon )
+            package = self.act( training=training, policy=policy, eps=epsilon )
             act_end = time.clock()
             act_dur = act_end - act_start
             act_time += act_dur
@@ -1086,80 +1142,98 @@ class COVIDModel( SocialNetwork ):
             start_rewards       = package[4]
             end_rewards         = package[5]
             
-            mask_nec    = 0
-            nomask_nec  = 0
-            mask_serv   = 0
-            nomask_serv = 0
-            mask_soc    = 0
-            nomask_soc  = 0
-            mask_nop    = 0
-            nomask_nop  = 0
-            
-            mytypes = self._properties['types']
-            for mytype in set( mytypes ):
-                for myaction in actions_dist[mytype]:
-                    actions_dist[mytype][myaction].append( 0 )
-            
-            for i in range( self._properties['n'] ):
+            for agent in range( self._properties['n'] ):
+                myneeds = self.get_needs_perception( agent )
+                stepssince = self._properties['steps_since'][agent]
+                rew = self.get_reward( agent )
+                mytype = self._properties['types'][agent]
                 
-                if mask_choices[i] == 0:
-                    
-                    if action_choices[i] == 0:
-                        nomask_nec += 1
-                        actions_dist[mytypes[i]]['nec_nomask'][-1] += 1
-                    elif action_choices[i] == 1:
-                        nomask_serv += 1
-                        actions_dist[mytypes[i]]['serv_nomask'][-1] += 1
-                    elif action_choices[i] == 2:
-                        nomask_soc += 1
-                        actions_dist[mytypes[i]]['soc_nomask'][-1] += 1
-                    elif action_choices[i] == 3:
-                        nomask_nop += 1
-                        actions_dist[mytypes[i]]['nop_nomask'][-1] += 1
-                        
-                elif mask_choices[i] == 1:
-                    
-                    if action_choices[i] == 0:
-                        mask_nec += 1
-                        actions_dist[mytypes[i]]['nec_mask'][-1] += 1
-                    elif action_choices[i] == 1:
-                        mask_serv += 1
-                        actions_dist[mytypes[i]]['serv_mask'][-1] += 1
-                    elif action_choices[i] == 2:
-                        mask_soc += 1
-                        actions_dist[mytypes[i]]['soc_nomask'][-1] += 1
-                    elif action_choices[i] == 3:
-                        mask_nop += 1
-                        actions_dist[mytypes[i]]['nop_nomask'][-1] += 1
+                mystuff = [ myneeds, stepssince, rew, mytype,
+                            action_choices[ agent ], mask_choices[agent] ]
+            
+                myresults[agent].append( '#'.join( [str(x) for x in mystuff] ) )
+            
+#            print( stepssince )
+#            print( myneeds )
+#            print( rew )
+#            print( mytype )
+#            print( action_choices[agent] )
+#            print( mask_choices[agent] )
+#            
+#            mask_nec    = 0
+#            nomask_nec  = 0
+#            mask_serv   = 0
+#            nomask_serv = 0
+#            mask_soc    = 0
+#            nomask_soc  = 0
+#            mask_nop    = 0
+#            nomask_nop  = 0
+            
+#            mytypes = self._properties['types']
+#            for mytype in set( mytypes ):
+#                for myaction in actions_dist[mytype]:
+#                    actions_dist[mytype][myaction].append( 0 )
+            
+#            for i in range( self._properties['n'] ):
+#                
+#                if mask_choices[i] == 0:
+#                    
+#                    if action_choices[i] == 0:
+#                        nomask_nec += 1
+#                        actions_dist[mytypes[i]]['nec_nomask'][-1] += 1
+#                    elif action_choices[i] == 1:
+#                        nomask_serv += 1
+#                        actions_dist[mytypes[i]]['serv_nomask'][-1] += 1
+#                    elif action_choices[i] == 2:
+#                        nomask_soc += 1
+#                        actions_dist[mytypes[i]]['soc_nomask'][-1] += 1
+#                    elif action_choices[i] == 3:
+#                        nomask_nop += 1
+#                        actions_dist[mytypes[i]]['nop_nomask'][-1] += 1
+#                        
+#                elif mask_choices[i] == 1:
+#                    
+#                    if action_choices[i] == 0:
+#                        mask_nec += 1
+#                        actions_dist[mytypes[i]]['nec_mask'][-1] += 1
+#                    elif action_choices[i] == 1:
+#                        mask_serv += 1
+#                        actions_dist[mytypes[i]]['serv_mask'][-1] += 1
+#                    elif action_choices[i] == 2:
+#                        mask_soc += 1
+#                        actions_dist[mytypes[i]]['soc_nomask'][-1] += 1
+#                    elif action_choices[i] == 3:
+#                        mask_nop += 1
+#                        actions_dist[mytypes[i]]['nop_nomask'][-1] += 1
                         
 #            print( actions_dist )
                         
-            avg_lag = self.get_average_lag()
-            
-            avg_lag_nec.append( avg_lag[0] )
-            avg_lag_serv.append( avg_lag[1] )
-            avg_lag_soc.append( avg_lag[2] )
-            
-            num_nec_mask_interactions.append( mask_nec )
-            num_serv_mask_interactions.append( mask_serv )
-            num_social_mask_interactions.append( mask_soc )
-            num_mask_nops.append( mask_nop )
-            num_nec_nomask_interactions.append( nomask_nec )
-            num_serv_nomask_interactions.append( nomask_serv )
-            num_social_nomask_interactions.append( nomask_soc )
-            num_nomask_nops.append( nomask_nop )
-            
-            num_susceptible.append( self._properties['types'].count( 'S' ) )
-            num_exposed.append( self._properties['types'].count( 'E' ) )
-            num_infected.append( self._properties['types'].count( 'I' ) )
-            num_recovered.append( self._properties['types'].count( 'R' ) )
-            
-            avg_rewards.append( self.get_average_reward() )
-            avg_rewards_mask.append( self.get_average_reward( mode='mask' ) )
-            avg_rewards_nomask.append( self.get_average_reward( mode='nomask' ) )
-            
-            npi.append( self._properties['npi'] )
-            
+#            avg_lag = self.get_average_lag()
+#            
+#            avg_lag_nec.append( avg_lag[0] )
+#            avg_lag_serv.append( avg_lag[1] )
+#            avg_lag_soc.append( avg_lag[2] )
+#            
+#            num_nec_mask_interactions.append( mask_nec )
+#            num_serv_mask_interactions.append( mask_serv )
+#            num_social_mask_interactions.append( mask_soc )
+#            num_mask_nops.append( mask_nop )
+#            num_nec_nomask_interactions.append( nomask_nec )
+#            num_serv_nomask_interactions.append( nomask_serv )
+#            num_social_nomask_interactions.append( nomask_soc )
+#            num_nomask_nops.append( nomask_nop )
+#            
+#            num_susceptible.append( self._properties['types'].count( 'S' ) )
+#            num_exposed.append( self._properties['types'].count( 'E' ) )
+#            num_infected.append( self._properties['types'].count( 'I' ) )
+#            num_recovered.append( self._properties['types'].count( 'R' ) )
+#            
+#            avg_rewards.append( self.get_average_reward() )
+#            avg_rewards_mask.append( self.get_average_reward( mode='mask' ) )
+#            avg_rewards_nomask.append( self.get_average_reward( mode='nomask' ) )
+#            
+#            npi.append( self._properties['npi'] )
+#            
             new_action_states = [ self.get_state_for_action( i ) for i in \
                                   range( self._properties['n'] ) ]
             new_mask_states = [ self.get_state_for_masking( i, action_choices[i] ) for i in \
@@ -1236,150 +1310,153 @@ class COVIDModel( SocialNetwork ):
             self.action_model.save( a_model_name )
             self.mask_model.save( m_model_name )
         
-        num_susceptible = [ str(k) for k in num_susceptible ]
-        num_exposed = [ str(k) for k in num_exposed ]
-        num_infected = [ str(k) for k in num_infected ]
-        num_recovered = [ str(k) for k in num_recovered ]
-        num_nec_mask_interactions = [ str(k) for k in num_nec_mask_interactions ]
-        num_serv_mask_interactions = [ str(k) for k in num_serv_mask_interactions ]
-        num_social_mask_interactions = [ str(k) for k in num_social_mask_interactions ]
-        num_mask_nops = [ str(k) for k in num_mask_nops ]
-        num_nec_nomask_interactions = [ str(k) for k in num_nec_nomask_interactions ]
-        num_serv_nomask_interactions = [ str(k) for k in num_serv_nomask_interactions ]
-        num_social_nomask_interactions = [ str(k) for k in num_social_nomask_interactions ]
-        num_nomask_nops = [ str(k) for k in num_nomask_nops ]
-        avg_rewards = [ str(k) for k in avg_rewards ]
-        avg_rewards_mask = [ str(k) for k in avg_rewards_mask ]
-        avg_rewards_nomask = [ str(k) for k in avg_rewards_nomask ]
-        npi = [ str(k) for k in npi ]
-        avg_lag_nec = [ str(k) for k in avg_lag_nec ]
-        avg_lag_serv = [ str(k) for k in avg_lag_serv ]
-        avg_lag_soc = [ str(k) for k in avg_lag_soc ]
-        
-        i_nec_mask = [ str(k) for k in actions_dist['I']['nec_mask'] ]
-        i_nec_nomask = [ str(k) for k in actions_dist['I']['nec_nomask'] ]
-        s_nec_mask = [ str(k) for k in actions_dist['S']['nec_mask'] ]
-        s_nec_nomask = [ str(k) for k in actions_dist['S']['nec_nomask'] ]
-        e_nec_mask = [ str(k) for k in actions_dist['E']['nec_mask'] ]
-        e_nec_nomask = [ str(k) for k in actions_dist['E']['nec_nomask'] ]
-        
-        i_soc_mask = [ str(k) for k in actions_dist['I']['soc_mask'] ]
-        i_soc_nomask = [ str(k) for k in actions_dist['I']['soc_nomask'] ]
-        s_soc_mask = [ str(k) for k in actions_dist['S']['soc_mask'] ]
-        s_soc_nomask = [ str(k) for k in actions_dist['S']['soc_nomask'] ]
-        e_soc_mask = [ str(k) for k in actions_dist['E']['soc_mask'] ]
-        e_soc_nomask = [ str(k) for k in actions_dist['E']['soc_nomask'] ]
-        
-        i_serv_mask = [ str(k) for k in actions_dist['I']['serv_mask'] ]
-        i_serv_nomask = [ str(k) for k in actions_dist['I']['serv_nomask'] ]
-        s_serv_mask = [ str(k) for k in actions_dist['S']['serv_mask'] ]
-        s_serv_nomask = [ str(k) for k in actions_dist['S']['serv_nomask'] ]
-        e_serv_mask = [ str(k) for k in actions_dist['E']['serv_mask'] ]
-        e_serv_nomask = [ str(k) for k in actions_dist['E']['serv_nomask'] ]
-        
-        i_nop_mask = [ str(k) for k in actions_dist['I']['nop_mask'] ]
-        i_nop_nomask = [ str(k) for k in actions_dist['I']['nop_nomask'] ]
-        s_nop_mask = [ str(k) for k in actions_dist['S']['nop_mask'] ]
-        s_nop_nomask = [ str(k) for k in actions_dist['S']['nop_nomask'] ]
-        e_nop_mask = [ str(k) for k in actions_dist['E']['nop_mask'] ]
-        e_nop_nomask = [ str(k) for k in actions_dist['E']['nop_nomask'] ]
-        
-        actions_file.write( 's_nec_mask,' )
-        actions_file.write( ','.join( s_nec_mask ) + '\n' )
-        actions_file.write( 's_nec_nomask,' )
-        actions_file.write( ','.join( s_nec_nomask ) + '\n' )
-        actions_file.write( 'e_nec_mask,' )
-        actions_file.write( ','.join( e_nec_mask ) + '\n' )
-        actions_file.write( 'e_nec_nomask,' )
-        actions_file.write( ','.join( e_nec_nomask ) + '\n' )
-        actions_file.write( 'i_nec_mask,' )
-        actions_file.write( ','.join( i_nec_mask ) + '\n' )
-        actions_file.write( 'i_nec_nomask,' )
-        actions_file.write( ','.join( i_nec_nomask ) + '\n' )
-        
-        actions_file.write( 's_soc_mask,' )
-        actions_file.write( ','.join( s_soc_mask ) + '\n' )
-        actions_file.write( 's_soc_nomask,' )
-        actions_file.write( ','.join( s_soc_nomask ) + '\n' )
-        actions_file.write( 'e_soc_mask,' )
-        actions_file.write( ','.join( e_soc_mask ) + '\n' )
-        actions_file.write( 'e_soc_nomask,' )
-        actions_file.write( ','.join( e_soc_nomask ) + '\n' )
-        actions_file.write( 'i_soc_mask,' )
-        actions_file.write( ','.join( i_soc_mask ) + '\n' )
-        actions_file.write( 'i_soc_nomask,' )
-        actions_file.write( ','.join( i_soc_nomask ) + '\n' )
-        
-        actions_file.write( 's_serv_mask,' )
-        actions_file.write( ','.join( s_serv_mask ) + '\n' )
-        actions_file.write( 's_serv_nomask,' )
-        actions_file.write( ','.join( s_serv_nomask ) + '\n' )
-        actions_file.write( 'e_serv_mask,' )
-        actions_file.write( ','.join( e_serv_mask ) + '\n' )
-        actions_file.write( 'e_serv_nomask,' )
-        actions_file.write( ','.join( e_serv_nomask ) + '\n' )
-        actions_file.write( 'i_serv_mask,' )
-        actions_file.write( ','.join( i_serv_mask ) + '\n' )
-        actions_file.write( 'i_serv_nomask,' )
-        actions_file.write( ','.join( i_serv_nomask ) + '\n' )
-        
-        actions_file.write( 's_nop_mask,' )
-        actions_file.write( ','.join( s_nop_mask ) + '\n' )
-        actions_file.write( 's_nop_nomask,' )
-        actions_file.write( ','.join( s_nop_nomask ) + '\n' )
-        actions_file.write( 'e_nop_mask,' )
-        actions_file.write( ','.join( e_nop_mask ) + '\n' )
-        actions_file.write( 'e_nop_nomask,' )
-        actions_file.write( ','.join( e_nop_nomask ) + '\n' )
-        actions_file.write( 'i_nop_mask,' )
-        actions_file.write( ','.join( i_nop_mask ) + '\n' )
-        actions_file.write( 'i_nop_nomask,' )
-        actions_file.write( ','.join( i_nop_nomask ) + '\n' )
-        
-        result_file.write( 'S,' )
-        result_file.write( ','.join( num_susceptible ) + '\n' )
-        result_file.write( 'E,' )
-        result_file.write( ','.join( num_exposed ) + '\n' )
-        result_file.write( 'I,' )
-        result_file.write( ','.join( num_infected ) + '\n' )
-        result_file.write( 'R,' )
-        result_file.write( ','.join( num_recovered ) + '\n' )
-        
-        result_file.write( 'nec_mask,' )
-        result_file.write( ','.join( num_nec_mask_interactions ) + '\n' )
-        result_file.write( 'serv_mask,' )
-        result_file.write( ','.join( num_serv_mask_interactions ) + '\n' )
-        result_file.write( 'social_mask,' )
-        result_file.write( ','.join( num_social_mask_interactions ) + '\n' )
-        result_file.write( 'nop_mask,' )
-        result_file.write( ','.join( num_mask_nops ) + '\n' )
-        result_file.write( 'nec_nomask,' )
-        result_file.write( ','.join( num_nec_nomask_interactions ) + '\n' )
-        result_file.write( 'serv_nomask,' )
-        result_file.write( ','.join( num_serv_nomask_interactions ) + '\n' )
-        result_file.write( 'social_nomask,' )
-        result_file.write( ','.join( num_social_nomask_interactions ) + '\n' )
-        result_file.write( 'nop_nomask,' )
-        result_file.write( ','.join( num_nomask_nops ) + '\n' )
-        
-        result_file.write( 'rew,' )
-        result_file.write( ','.join( avg_rewards ) + '\n' )
-        result_file.write( 'rew_mask,' )
-        result_file.write( ','.join( avg_rewards_mask ) + '\n' )
-        result_file.write( 'rew_nomask,' )
-        result_file.write( ','.join( avg_rewards_nomask ) + '\n' )
-        result_file.write( 'npi,' )
-        result_file.write( ','.join( npi ) + '\n' )
-        
-        result_file.write( 'avglag_nec,' )
-        result_file.write( ','.join( avg_lag_nec ) + '\n' )
-        result_file.write( 'avglag_serv,' )
-        result_file.write( ','.join( avg_lag_serv ) + '\n' )
-        result_file.write( 'avglag_soc,' )
-        result_file.write( ','.join( avg_lag_soc ) + '\n' )
+#        num_susceptible = [ str(k) for k in num_susceptible ]
+#        num_exposed = [ str(k) for k in num_exposed ]
+#        num_infected = [ str(k) for k in num_infected ]
+#        num_recovered = [ str(k) for k in num_recovered ]
+#        num_nec_mask_interactions = [ str(k) for k in num_nec_mask_interactions ]
+#        num_serv_mask_interactions = [ str(k) for k in num_serv_mask_interactions ]
+#        num_social_mask_interactions = [ str(k) for k in num_social_mask_interactions ]
+#        num_mask_nops = [ str(k) for k in num_mask_nops ]
+#        num_nec_nomask_interactions = [ str(k) for k in num_nec_nomask_interactions ]
+#        num_serv_nomask_interactions = [ str(k) for k in num_serv_nomask_interactions ]
+#        num_social_nomask_interactions = [ str(k) for k in num_social_nomask_interactions ]
+#        num_nomask_nops = [ str(k) for k in num_nomask_nops ]
+#        avg_rewards = [ str(k) for k in avg_rewards ]
+#        avg_rewards_mask = [ str(k) for k in avg_rewards_mask ]
+#        avg_rewards_nomask = [ str(k) for k in avg_rewards_nomask ]
+#        npi = [ str(k) for k in npi ]
+#        avg_lag_nec = [ str(k) for k in avg_lag_nec ]
+#        avg_lag_serv = [ str(k) for k in avg_lag_serv ]
+#        avg_lag_soc = [ str(k) for k in avg_lag_soc ]
+#        
+#        i_nec_mask = [ str(k) for k in actions_dist['I']['nec_mask'] ]
+#        i_nec_nomask = [ str(k) for k in actions_dist['I']['nec_nomask'] ]
+#        s_nec_mask = [ str(k) for k in actions_dist['S']['nec_mask'] ]
+#        s_nec_nomask = [ str(k) for k in actions_dist['S']['nec_nomask'] ]
+#        e_nec_mask = [ str(k) for k in actions_dist['E']['nec_mask'] ]
+#        e_nec_nomask = [ str(k) for k in actions_dist['E']['nec_nomask'] ]
+#        
+#        i_soc_mask = [ str(k) for k in actions_dist['I']['soc_mask'] ]
+#        i_soc_nomask = [ str(k) for k in actions_dist['I']['soc_nomask'] ]
+#        s_soc_mask = [ str(k) for k in actions_dist['S']['soc_mask'] ]
+#        s_soc_nomask = [ str(k) for k in actions_dist['S']['soc_nomask'] ]
+#        e_soc_mask = [ str(k) for k in actions_dist['E']['soc_mask'] ]
+#        e_soc_nomask = [ str(k) for k in actions_dist['E']['soc_nomask'] ]
+#        
+#        i_serv_mask = [ str(k) for k in actions_dist['I']['serv_mask'] ]
+#        i_serv_nomask = [ str(k) for k in actions_dist['I']['serv_nomask'] ]
+#        s_serv_mask = [ str(k) for k in actions_dist['S']['serv_mask'] ]
+#        s_serv_nomask = [ str(k) for k in actions_dist['S']['serv_nomask'] ]
+#        e_serv_mask = [ str(k) for k in actions_dist['E']['serv_mask'] ]
+#        e_serv_nomask = [ str(k) for k in actions_dist['E']['serv_nomask'] ]
+#        
+#        i_nop_mask = [ str(k) for k in actions_dist['I']['nop_mask'] ]
+#        i_nop_nomask = [ str(k) for k in actions_dist['I']['nop_nomask'] ]
+#        s_nop_mask = [ str(k) for k in actions_dist['S']['nop_mask'] ]
+#        s_nop_nomask = [ str(k) for k in actions_dist['S']['nop_nomask'] ]
+#        e_nop_mask = [ str(k) for k in actions_dist['E']['nop_mask'] ]
+#        e_nop_nomask = [ str(k) for k in actions_dist['E']['nop_nomask'] ]
+#        
+#        actions_file.write( 's_nec_mask,' )
+#        actions_file.write( ','.join( s_nec_mask ) + '\n' )
+#        actions_file.write( 's_nec_nomask,' )
+#        actions_file.write( ','.join( s_nec_nomask ) + '\n' )
+#        actions_file.write( 'e_nec_mask,' )
+#        actions_file.write( ','.join( e_nec_mask ) + '\n' )
+#        actions_file.write( 'e_nec_nomask,' )
+#        actions_file.write( ','.join( e_nec_nomask ) + '\n' )
+#        actions_file.write( 'i_nec_mask,' )
+#        actions_file.write( ','.join( i_nec_mask ) + '\n' )
+#        actions_file.write( 'i_nec_nomask,' )
+#        actions_file.write( ','.join( i_nec_nomask ) + '\n' )
+#        
+#        actions_file.write( 's_soc_mask,' )
+#        actions_file.write( ','.join( s_soc_mask ) + '\n' )
+#        actions_file.write( 's_soc_nomask,' )
+#        actions_file.write( ','.join( s_soc_nomask ) + '\n' )
+#        actions_file.write( 'e_soc_mask,' )
+#        actions_file.write( ','.join( e_soc_mask ) + '\n' )
+#        actions_file.write( 'e_soc_nomask,' )
+#        actions_file.write( ','.join( e_soc_nomask ) + '\n' )
+#        actions_file.write( 'i_soc_mask,' )
+#        actions_file.write( ','.join( i_soc_mask ) + '\n' )
+#        actions_file.write( 'i_soc_nomask,' )
+#        actions_file.write( ','.join( i_soc_nomask ) + '\n' )
+#        
+#        actions_file.write( 's_serv_mask,' )
+#        actions_file.write( ','.join( s_serv_mask ) + '\n' )
+#        actions_file.write( 's_serv_nomask,' )
+#        actions_file.write( ','.join( s_serv_nomask ) + '\n' )
+#        actions_file.write( 'e_serv_mask,' )
+#        actions_file.write( ','.join( e_serv_mask ) + '\n' )
+#        actions_file.write( 'e_serv_nomask,' )
+#        actions_file.write( ','.join( e_serv_nomask ) + '\n' )
+#        actions_file.write( 'i_serv_mask,' )
+#        actions_file.write( ','.join( i_serv_mask ) + '\n' )
+#        actions_file.write( 'i_serv_nomask,' )
+#        actions_file.write( ','.join( i_serv_nomask ) + '\n' )
+#        
+#        actions_file.write( 's_nop_mask,' )
+#        actions_file.write( ','.join( s_nop_mask ) + '\n' )
+#        actions_file.write( 's_nop_nomask,' )
+#        actions_file.write( ','.join( s_nop_nomask ) + '\n' )
+#        actions_file.write( 'e_nop_mask,' )
+#        actions_file.write( ','.join( e_nop_mask ) + '\n' )
+#        actions_file.write( 'e_nop_nomask,' )
+#        actions_file.write( ','.join( e_nop_nomask ) + '\n' )
+#        actions_file.write( 'i_nop_mask,' )
+#        actions_file.write( ','.join( i_nop_mask ) + '\n' )
+#        actions_file.write( 'i_nop_nomask,' )
+#        actions_file.write( ','.join( i_nop_nomask ) + '\n' )
+#        
+#        result_file.write( 'S,' )
+#        result_file.write( ','.join( num_susceptible ) + '\n' )
+#        result_file.write( 'E,' )
+#        result_file.write( ','.join( num_exposed ) + '\n' )
+#        result_file.write( 'I,' )
+#        result_file.write( ','.join( num_infected ) + '\n' )
+#        result_file.write( 'R,' )
+#        result_file.write( ','.join( num_recovered ) + '\n' )
+#        
+#        result_file.write( 'nec_mask,' )
+#        result_file.write( ','.join( num_nec_mask_interactions ) + '\n' )
+#        result_file.write( 'serv_mask,' )
+#        result_file.write( ','.join( num_serv_mask_interactions ) + '\n' )
+#        result_file.write( 'social_mask,' )
+#        result_file.write( ','.join( num_social_mask_interactions ) + '\n' )
+#        result_file.write( 'nop_mask,' )
+#        result_file.write( ','.join( num_mask_nops ) + '\n' )
+#        result_file.write( 'nec_nomask,' )
+#        result_file.write( ','.join( num_nec_nomask_interactions ) + '\n' )
+#        result_file.write( 'serv_nomask,' )
+#        result_file.write( ','.join( num_serv_nomask_interactions ) + '\n' )
+#        result_file.write( 'social_nomask,' )
+#        result_file.write( ','.join( num_social_nomask_interactions ) + '\n' )
+#        result_file.write( 'nop_nomask,' )
+#        result_file.write( ','.join( num_nomask_nops ) + '\n' )
+#        
+#        result_file.write( 'rew,' )
+#        result_file.write( ','.join( avg_rewards ) + '\n' )
+#        result_file.write( 'rew_mask,' )
+#        result_file.write( ','.join( avg_rewards_mask ) + '\n' )
+#        result_file.write( 'rew_nomask,' )
+#        result_file.write( ','.join( avg_rewards_nomask ) + '\n' )
+#        result_file.write( 'npi,' )
+#        result_file.write( ','.join( npi ) + '\n' )
+#        
+#        result_file.write( 'avglag_nec,' )
+#        result_file.write( ','.join( avg_lag_nec ) + '\n' )
+#        result_file.write( 'avglag_serv,' )
+#        result_file.write( ','.join( avg_lag_serv ) + '\n' )
+#        result_file.write( 'avglag_soc,' )
+#        result_file.write( ','.join( avg_lag_soc ) + '\n' )
+            
+        for agent in myresults:
+            result_file.write( '$'.join( agent ) + '\n' )
         
         result_file.close()
-        actions_file.close()
+#        actions_file.close()
         
         write_end = time.clock()
         write_dur = write_end - write_start
